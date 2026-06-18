@@ -1,0 +1,24 @@
+{
+  "name": "chatforge-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-tenant SaaS to build custom AI chatbots from PDFs/docs/websites and embed them anywhere.",
+  "workspaces": [
+    "web",
+    "widget",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace web",
+    "build:web": "npm run build --workspace web",
+    "build:widget": "npm run build --workspace widget",
+    "build:shared": "npm run build --workspace @chatforge/shared",
+    "lint": "npm run lint --workspace web",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "infra:logs": "docker compose -f infra/docker-compose.yml logs -f"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
