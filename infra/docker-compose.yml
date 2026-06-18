@@ -1,0 +1,105 @@
+# Local development stack for ChatForge AI.
+# Usage: npm run infra:up   (from repo root)
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: chatforge-postgres
+    environment:
+      POSTGRES_USER: chatforge
+      POSTGRES_PASSWORD: chatforge
+      POSTGRES_DB: chatforge
+    ports:
+      - "5433:5432"   # 5433 on host to avoid clashing with a native Postgres
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatforge -d chatforge"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: chatforge-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: chatforge-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: chatforge
+      MINIO_ROOT_PASSWORD: chatforge-secret
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # console
+    volumes:
+      - ./data/minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Creates the uploads bucket on startup so the app has somewhere to write.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 chatforge chatforge-secret &&
+      mc mb --ignore-existing local/chatforge-uploads &&
+      echo 'bucket ready';
+      "
+
+  # ── AI data plane (containerized so it survives sleeps/restarts) ────────────
+  # Reads provider keys etc. from the repo-root .env; DB/Redis/S3 hosts are
+  # overridden to the compose network service names.
+  ai:
+    build:
+      context: ../AI_server
+      dockerfile: Dockerfile
+    container_name: chatforge-ai
+    env_file: ../.env
+    environment:
+      # DATABASE_URL comes from env_file (../.env = Neon). Only Redis + S3 hostnames are
+      # overridden to compose service names (localhost won't resolve inside a container).
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ../AI_server
+      dockerfile: Dockerfile
+    container_name: chatforge-worker
+    command: ["arq", "app.workers.ingest_worker.WorkerSettings"]
+    env_file: ../.env
+    environment:
+      # DATABASE_URL comes from env_file (../.env = Neon). Only Redis + S3 hostnames are
+      # overridden to compose service names (localhost won't resolve inside a container).
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    restart: unless-stopped
