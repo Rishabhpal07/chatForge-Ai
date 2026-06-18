@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ChatForge Widget — demo host page</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 640px; margin: 60px auto; padding: 0 20px; color: #222; }
+      code { background: #f1f1f1; padding: 2px 5px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>Pretend customer website</h1>
+    <p>
+      This static page simulates a customer's site with the ChatForge widget embedded.
+      The chat launcher should appear in the bottom-right corner.
+    </p>
+    <p>
+      Replace <code>data-bot</code> below with one of your bot's public keys (from the
+      dashboard), make sure the bot is <strong>active</strong>, then reload.
+    </p>
+
+    <!-- The embed snippet. Served from the same origin, so the widget resolves its
+         config from /api/widget/:publicKey automatically. -->
+    <script src="/widget.js" data-bot="pk_live_REPLACE_ME" async></script>
+  </body>
+</html>
