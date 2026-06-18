@@ -22,11 +22,13 @@ class IngestJob(BaseModel):
     deep_crawl: bool = False
     max_pages: int | None = None
     max_depth: int | None = None
+    # Sitemap crawl mode: quick (~50) | standard (~500) | full (all).
+    crawl_mode: Literal["quick", "standard", "full"] = "standard"
 
 
 class IngestResult(BaseModel):
     source_id: str
-    status: Literal["ready", "error"]
+    status: Literal["ready", "partially_ready", "error"]
     documents: int = 0
     chunks: int = 0
     error: str | None = None

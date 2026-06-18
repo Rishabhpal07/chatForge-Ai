@@ -1,8 +1,3 @@
-"""Internal ingestion endpoint.
-
-Authenticated with a signed service token (never client input). Enqueues the job onto
-the arq/Redis queue for the worker to process. The token's tenant must match the job.
-"""
 from __future__ import annotations
 
 from arq import create_pool

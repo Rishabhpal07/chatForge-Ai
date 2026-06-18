@@ -47,9 +47,19 @@ class Settings(BaseSettings):
     # When the browser engine (crawl4ai/Playwright) is enabled we get JS rendering and
     # clean markdown; if it's unavailable we fall back to httpx + trafilatura.
     crawl_browser_enabled: bool = True
-    crawl_max_pages: int = 150     # hard ceiling on pages per source (sitemap / deep crawl)
+    crawl_max_pages: int = 40      # hard ceiling on pages per source (sitemap / deep crawl)
     crawl_max_depth: int = 2       # default link-following depth for deep crawl
-    crawl_page_timeout_ms: int = 30000
+    crawl_page_timeout_ms: int = 60000
+    # Pause (seconds) after page load before capturing HTML, so JS-rendered content
+    # (e.g. e-commerce prices/specs on SPA/Next.js sites) is present in the markdown.
+    crawl_render_delay_sec: float = 5.0
+
+    # Progressive sitemap ingestion.
+    sitemap_concurrency: int = 30      # pages fetched in parallel (env: SITEMAP_CONCURRENCY)
+    sitemap_first_batch: int = 20      # index this many pages, then mark the bot usable
+    sitemap_quick_pages: int = 50      # crawl_mode=quick cap
+    sitemap_standard_pages: int = 500  # crawl_mode=standard cap (full = no cap)
+    crawl_fetch_retries: int = 2       # per-page fetch retries on failure
 
 
 @lru_cache

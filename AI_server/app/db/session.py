@@ -17,8 +17,14 @@ _pool: asyncpg.Pool | None = None
 
 
 def _normalize_dsn(dsn: str) -> str:
-    # asyncpg wants the bare scheme, not SQLAlchemy-style drivers.
-    return dsn.replace("postgresql+asyncpg://", "postgresql://")
+    # asyncpg wants the bare scheme (not SQLAlchemy-style) and doesn't understand libpq
+    # query params like sslmode/channel_binding — strip them (TLS is set via the ssl kwarg).
+    dsn = dsn.replace("postgresql+asyncpg://", "postgresql://")
+    return dsn.split("?", 1)[0]
+
+
+def _needs_ssl(dsn: str) -> bool:
+    return "sslmode=require" in dsn or "neon.tech" in dsn or "upstash" in dsn
 
 
 async def init_pool() -> asyncpg.Pool:
@@ -26,7 +32,13 @@ async def init_pool() -> asyncpg.Pool:
     if _pool is None:
         settings = get_settings()
         _pool = await asyncpg.create_pool(
-            _normalize_dsn(settings.database_url), min_size=1, max_size=10
+            _normalize_dsn(settings.database_url),
+            min_size=1,
+            max_size=10,
+            # Neon requires TLS; its pooled endpoint runs PgBouncer (transaction mode),
+            # which is incompatible with asyncpg's prepared-statement cache → disable it.
+            ssl="require" if _needs_ssl(settings.database_url) else None,
+            statement_cache_size=0,
         )
     return _pool
 

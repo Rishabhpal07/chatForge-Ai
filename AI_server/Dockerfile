@@ -4,7 +4,8 @@ FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/srv
 
 WORKDIR /srv
 
@@ -15,7 +16,8 @@ RUN apt-get update \
 
 COPY pyproject.toml ./
 COPY app ./app
-RUN pip install --upgrade pip && pip install .
+COPY start.sh ./start.sh
+RUN chmod +x ./start.sh && pip install --upgrade pip && pip install .
 
 # crawl4ai needs a headless Chromium (+ its OS libs) for JS-rendered crawling.
 # `--with-deps` pulls the required system packages; the browser is baked into the image.
@@ -28,4 +30,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run via the entrypoint: set PROCESS=api|worker|both (default api). For a single-container
+# host (e.g. Hugging Face Spaces) use PROCESS=both; for 2 services run one api + one worker.
+CMD ["./start.sh"]

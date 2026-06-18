@@ -34,3 +34,7 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
+    # Crawls (esp. deep/sitemap with a browser) can run for minutes — well past arq's
+    # 300s default, which would kill + retry the job, re-crawling from scratch in a loop.
+    job_timeout = 1800  # 30 min
+    max_tries = 2       # don't retry a long ingestion endlessly

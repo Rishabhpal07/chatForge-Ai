@@ -26,8 +26,9 @@ logger = logging.getLogger(__name__)
 
 
 # ── Sitemap parsing (engine-independent) ─────────────────────────────────────
-def load_sitemap_urls(sitemap_url: str) -> list[str]:
-    """Fetch a sitemap.xml and return its <loc> URLs (flat sitemaps; ignores indexes)."""
+def load_sitemap_urls(sitemap_url: str, *, _depth: int = 0) -> list[str]:
+    """Fetch a sitemap and return page URLs. Handles both a flat <urlset> and a nested
+    <sitemapindex> (recursing into child sitemaps, as large sites use)."""
     import httpx
 
     resp = httpx.get(
@@ -36,7 +37,44 @@ def load_sitemap_urls(sitemap_url: str) -> list[str]:
     resp.raise_for_status()
     root = ElementTree.fromstring(resp.text)
     ns = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+
+    # Sitemap index → recurse into child sitemaps (bounded depth + count).
+    children = [loc.text for loc in root.findall(".//sm:sitemap/sm:loc", ns) if loc.text]
+    if children and _depth < 2:
+        urls: list[str] = []
+        for child in children[:50]:
+            try:
+                urls.extend(load_sitemap_urls(child, _depth=_depth + 1))
+            except Exception:  # noqa: BLE001 — skip an unreachable child sitemap
+                continue
+        return urls
+
     return [loc.text for loc in root.findall(".//sm:url/sm:loc", ns) if loc.text]
+
+
+async def crawl_urls(urls: list[str], *, concurrency: int | None = None) -> list[LoadedDoc]:
+    """Fetch many URLs concurrently via the fast httpx+trafilatura path, with bounded
+    parallelism + per-URL retries/backoff (rate-limit friendly). Failures are skipped."""
+    import asyncio
+
+    s = get_settings()
+    sem = asyncio.Semaphore(concurrency or s.sitemap_concurrency)
+    retries = s.crawl_fetch_retries
+
+    async def _fetch(url: str) -> list[LoadedDoc]:
+        async with sem:
+            for attempt in range(retries + 1):
+                try:
+                    return await asyncio.to_thread(loaders.load_url, url)
+                except Exception:  # noqa: BLE001
+                    if attempt < retries:
+                        await asyncio.sleep(0.5 * (attempt + 1))  # backoff
+                    else:
+                        return []
+            return []
+
+    results = await asyncio.gather(*(_fetch(u) for u in urls))
+    return [doc for batch in results for doc in batch]
 
 
 # ── crawl4ai result helpers (tolerant of version differences) ────────────────
@@ -79,11 +117,22 @@ def _browser_available() -> bool:
 
 
 def _run_config():
-    """Minimal, version-tolerant CrawlerRunConfig (falls back to None if the API differs)."""
+    """Version-tolerant CrawlerRunConfig. Waits a few seconds after load so JS-rendered
+    content (SPA/Next.js prices, specs, etc.) is captured. Falls back gracefully if the
+    installed crawl4ai doesn't accept some kwargs."""
+    s = get_settings()
     try:
         from crawl4ai import CrawlerRunConfig
 
-        return CrawlerRunConfig(page_timeout=get_settings().crawl_page_timeout_ms)
+        try:
+            return CrawlerRunConfig(
+                page_timeout=s.crawl_page_timeout_ms,
+                wait_until="load",
+                delay_before_return_html=s.crawl_render_delay_sec,
+            )
+        except TypeError:
+            # Older crawl4ai without these kwargs — degrade to the basic config.
+            return CrawlerRunConfig(page_timeout=s.crawl_page_timeout_ms)
     except Exception:  # noqa: BLE001
         return None
 
@@ -97,14 +146,23 @@ async def crawl_single(url: str) -> list[LoadedDoc]:
         from crawl4ai import AsyncWebCrawler, BrowserConfig
 
         run_cfg = _run_config()
+        best, title = "", url
+        # JS/SPA pages (e.g. e-commerce prices) render inconsistently — sometimes only the
+        # shell loads before capture. Retry a few times in one browser session and keep the
+        # fullest render; stop early once it's clearly complete.
         async with AsyncWebCrawler(config=BrowserConfig(headless=True, verbose=False)) as crawler:
-            result = await crawler.arun(url=url, config=run_cfg)
-        if not getattr(result, "success", True):
-            raise RuntimeError(getattr(result, "error_message", "crawl failed"))
-        text = _markdown_of(result)
-        if not text.strip():
+            for _ in range(3):
+                result = await crawler.arun(url=url, config=run_cfg)
+                if not getattr(result, "success", True):
+                    continue
+                text = _markdown_of(result)
+                if len(text) > len(best):
+                    best, title = text, _title_of(result, url)
+                if len(best) > 5000:  # fully rendered, no need to retry
+                    break
+        if not best.strip():
             raise RuntimeError("empty markdown")
-        return [LoadedDoc(title=_title_of(result, url), text=text, metadata={"url": url})]
+        return [LoadedDoc(title=title, text=best, metadata={"url": url})]
     except Exception as exc:  # noqa: BLE001 — degrade to the lightweight loader
         logger.warning("crawl4ai single-page failed for %s (%s); falling back", url, exc)
         return loaders.load_url(url)
