@@ -49,8 +49,12 @@ export default function LandingPage() {
       {/* Nav */}
       <header className="sticky top-0 z-50 flex w-full items-center justify-between border-b border-white/5 bg-surface/70 px-lg py-sm backdrop-blur-xl">
         <Link href="/" className="flex items-center gap-xs">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-container">
-            <Icon name="smart_toy" filled className="text-white" />
+          <div>
+            <img
+              src="/logo.png"
+              alt="ChatForge AI Logo"
+              className="h-8 w-8 rounded-sm"
+            />
           </div>
           <span className="font-display text-headline-md font-bold text-on-surface">
             ChatForge AI

@@ -14,6 +14,7 @@ import {
   Copy,
   Check,
   Trash2,
+  CircleStop,
 } from "lucide-react";
 import type { Bot, Source } from "@chatforge/shared";
 import { Card, Button, StatusBadge, Label } from "@/src/components/ui";
@@ -171,6 +172,7 @@ function KnowledgeSection({
   const [crawlMode, setCrawlMode] = useState<"quick" | "standard" | "full">("standard");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actingId, setActingId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // Per-source baseline (first in-progress observation) → ETA = remaining / crawl-rate.
   // Computed in an effect (on each poll) and stored in state, so render stays ref-free.
@@ -270,6 +272,27 @@ function KnowledgeSection({
     }
   }
 
+  async function stopSource(id: string) {
+    setActingId(id);
+    await fetch(`/api/sources/${id}`, { method: "PATCH" });
+    await onChange();
+    setActingId(null);
+  }
+
+  async function deleteSource(id: string, uri: string) {
+    if (!window.confirm(`Delete "${uri}" and everything indexed from it? This can't be undone.`))
+      return;
+    setActingId(id);
+    const res = await fetch(`/api/sources/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      setActingId(null);
+      window.alert(`Delete failed (${res.status}).`);
+      return;
+    }
+    await onChange();
+    setActingId(null);
+  }
+
   return (
     <Card className="p-6">
       <h2 className="mb-1 text-lg font-semibold text-ink">Knowledge base</h2>
@@ -315,8 +338,8 @@ function KnowledgeSection({
               onChange={(e) => setDeepCrawl(e.target.checked)}
               className="h-3.5 w-3.5 rounded border-line accent-brand"
             />
-            Crawl linked pages on the same site (whole-site crawl). A sitemap URL is
-            detected automatically.
+            Crawl the whole site — automatically finds the site&rsquo;s sitemap for an exact
+            page count, or follows internal links if there isn&rsquo;t one.
           </label>
           <label className="flex items-center gap-2 text-xs text-ink-muted">
             <span className="shrink-0">Crawl scope:</span>
@@ -339,14 +362,17 @@ function KnowledgeSection({
       {sources.length === 0 ? (
         <p className="text-sm text-ink-muted">No sources yet.</p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-line">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-lg border border-line">
+          <table className="w-full min-w-[34rem] text-sm">
             <thead>
               <tr className="bg-surface-muted text-left">
                 <th className="label-mono px-4 py-2 text-[11px] text-ink-muted">Filename</th>
                 <th className="label-mono px-4 py-2 text-[11px] text-ink-muted">Type</th>
                 <th className="label-mono px-4 py-2 text-right text-[11px] text-ink-muted">
                   Status
+                </th>
+                <th className="label-mono px-4 py-2 text-right text-[11px] text-ink-muted">
+                  Actions
                 </th>
               </tr>
             </thead>
@@ -368,10 +394,32 @@ function KnowledgeSection({
                       <td className="px-4 py-3 text-right">
                         <StatusBadge status={s.status} />
                       </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          {(inProgress || s.status === "pending") && (
+                            <button
+                              onClick={() => stopSource(s.id)}
+                              disabled={actingId === s.id}
+                              title="Stop crawling (keep pages indexed so far)"
+                              className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-amber-500/10 hover:text-amber-400 disabled:opacity-40"
+                            >
+                              <CircleStop className="h-4 w-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => deleteSource(s.id, s.uri)}
+                            disabled={actingId === s.id}
+                            title="Delete source and its indexed data"
+                            className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-error/10 hover:text-error disabled:opacity-40"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                     {inProgress && total > 0 && (
                       <tr>
-                        <td colSpan={3} className="px-4 pb-3">
+                        <td colSpan={4} className="px-4 pb-3">
                           <div className="mb-1 flex items-center justify-between text-[11px]">
                             <span className="font-medium text-ink">
                               Crawled {s.processedPages ?? 0} of {total} pages
@@ -386,7 +434,7 @@ function KnowledgeSection({
                             />
                           </div>
                           {s.status === "partially_ready" && (
-                            <p className="mt-1 text-[11px] text-brand">
+                            <p className="mt-1 text-[11px] text-blue-300">
                               ✓ Bot available now — indexing the remaining pages in the
                               background…
                             </p>
@@ -434,7 +482,7 @@ function SettingsSection({ bot, onSaved }: { bot: Bot; onSaved: () => void }) {
     <Card className="p-6">
       <h2 className="mb-4 text-lg font-semibold text-ink">Configuration</h2>
       <form onSubmit={save} className="flex flex-col gap-4">
-        <div>
+        {/* <div>
           <Label>Model</Label>
           <select
             value={model}
@@ -448,7 +496,7 @@ function SettingsSection({ bot, onSaved }: { bot: Bot; onSaved: () => void }) {
             ))}
             {!MODELS.some((m) => m.id === model) && <option value={model}>{model}</option>}
           </select>
-        </div>
+        </div> */}
         <div>
           <Label>System prompt</Label>
           <textarea
@@ -519,7 +567,7 @@ function Playground({ publicKey }: { publicKey: string }) {
           if (!line.startsWith("data: ")) continue;
           const evt = JSON.parse(line.slice(6));
           if (evt.type === "token") setAnswer((a) => a + evt.text);
-          if (evt.type === "error") setAnswer((a) => a + `\n[error: ${evt.message}]`);
+          if (evt.type === "error") setAnswer((a) => (a ? a + "\n\n" : "") + (evt.message ?? "Something went wrong. Please try again."));
         }
       }
     } finally {
@@ -567,34 +615,58 @@ function Playground({ publicKey }: { publicKey: string }) {
 }
 
 function EmbedSection({ publicKey }: { publicKey: string }) {
-  const [copied, setCopied] = useState(false);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const snippet = `<script src="${origin}/widget.js" data-bot="${publicKey}" async></script>`;
+  const scriptSnippet = `<script src="${origin}/widget.js" data-bot="${publicKey}" async></script>`;
+  const reactSnippet = `import { useEffect } from "react";
 
-  function copy() {
-    navigator.clipboard.writeText(snippet);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
+export function ChatForgeWidget() {
+  useEffect(() => {
+    const s = document.createElement("script");
+    s.src = "${origin}/widget.js";
+    s.dataset.bot = "${publicKey}";
+    s.async = true;
+    document.body.appendChild(s);
+    return () => { s.remove(); };
+  }, []);
+  return null;
+}`;
 
   return (
     <Card className="p-6">
       <h2 className="mb-1 text-lg font-semibold text-ink">Embed widget</h2>
-      <p className="mb-3 text-sm text-ink-muted">
-        Paste before <code className="font-mono text-xs">&lt;/body&gt;</code> on your site.
+      <p className="mb-4 text-sm text-ink-muted">
+        Add your chatbot to any site with one of these snippets.
       </p>
-      <button
-        onClick={copy}
-        className="absolute right-2 top-2 rounded p-1.5 text-white/70 hover:bg-white/10 hover:text-white"
-        aria-label="Copy embed snippet"
-      >
-        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-      </button>
-      <div className="relative">
-        <pre className="overflow-x-auto rounded-lg border-1 p-3 pr-10 text-xs text-white">
-          {snippet}
-        </pre>
+      <div className="flex flex-col gap-4">
+        <EmbedSnippet label="HTML — paste before </body>" code={scriptSnippet} />
+        <EmbedSnippet label="React / Next.js — add the component once" code={reactSnippet} />
       </div>
     </Card>
+  );
+}
+
+function EmbedSnippet({ label, code }: { label: string; code: string }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+  return (
+    <div>
+      <p className="mb-1.5 text-[11px] font-medium text-ink-muted">{label}</p>
+      <div className="relative">
+        <button
+          onClick={copy}
+          className="absolute right-2 top-2 z-10 rounded-lg bg-white/5 p-1.5 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+          aria-label="Copy snippet"
+        >
+          {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+        </button>
+        <pre className="overflow-x-auto rounded-lg border border-line p-3 pr-12 font-mono text-xs text-white">
+          {code}
+        </pre>
+      </div>
+    </div>
   );
 }

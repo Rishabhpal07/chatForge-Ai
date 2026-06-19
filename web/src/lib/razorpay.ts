@@ -10,7 +10,7 @@ const KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
 
 /** Plan prices in the smallest currency unit (paise, INR). */
 export const PLAN_PRICE_PAISE: Record<Exclude<Plan, "free">, number> = {
-  pro: 100, // ₹999 / mo
+  pro: 29900, // ₹999 / mo
   scale: 499900, // ₹4,999 / mo
 };
 
