@@ -107,6 +107,11 @@ export function mount(config: WidgetConfig): ShadowRoot {
     send.disabled = true;
     addBubble(messages, "user", text);
     const bot = addBubble(messages, "bot", "");
+    let raw = "";
+    const render = () => {
+      bot.innerHTML = renderMarkdown(raw);
+      messages.scrollTop = messages.scrollHeight;
+    };
 
     try {
       const res = await fetch(`${config.chatUrl}/chat`, {
@@ -125,12 +130,13 @@ export function mount(config: WidgetConfig): ShadowRoot {
       }
       for await (const evt of readSSE(res.body)) {
         if (evt.type === "token") {
-          bot.textContent += evt.text;
-          messages.scrollTop = messages.scrollHeight;
+          raw += evt.text;
+          render();
         } else if (evt.type === "done") {
           conversationId = evt.conversationId;
         } else if (evt.type === "error") {
-          bot.textContent += (bot.textContent ? "\n\n" : "") + (evt.message || "Sorry, something went wrong. Please try again.");
+          raw += (raw ? "\n\n" : "") + (evt.message || "Sorry, something went wrong. Please try again.");
+          render();
         }
       }
     } catch (err) {
@@ -162,4 +168,63 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
   );
+}
+
+/** Inline markdown on an already HTML-escaped string: code, bold, italic, links. */
+function renderInline(s: string): string {
+  s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  // links [text](http/https/mailto only — never javascript:)
+  s = s.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+  );
+  return s;
+}
+
+/** Minimal, XSS-safe markdown → HTML: escapes everything first, then builds only our
+ * own whitelisted tags. Handles paragraphs, bold/italic/code/links, bullet & numbered
+ * lists, headings (as bold), and fenced code blocks. */
+function renderMarkdown(src: string): string {
+  const lines = escapeHtml(src).split("\n");
+  let html = "";
+  let list: "ul" | "ol" | null = null;
+  let para: string[] = [];
+  let inCode = false;
+  let code: string[] = [];
+  const closeList = () => { if (list) { html += `</${list}>`; list = null; } };
+  const flushPara = () => {
+    if (para.length) { html += `<p>${renderInline(para.join(" "))}</p>`; para = []; }
+  };
+  for (const line of lines) {
+    if (line.trim().startsWith("```")) {
+      if (inCode) { html += `<pre><code>${code.join("\n")}</code></pre>`; code = []; inCode = false; }
+      else { flushPara(); closeList(); inCode = true; }
+      continue;
+    }
+    if (inCode) { code.push(line); continue; }
+
+    const t = line.trim();
+    if (!t) { flushPara(); closeList(); continue; }
+
+    const h = t.match(/^#{1,6}\s+(.*)/);
+    const ul = t.match(/^[-*]\s+(.*)/);
+    const ol = t.match(/^\d+\.\s+(.*)/);
+    if (h) { flushPara(); closeList(); html += `<strong class="md-h">${renderInline(h[1])}</strong>`; }
+    else if (ul) {
+      flushPara();
+      if (list !== "ul") { closeList(); html += "<ul>"; list = "ul"; }
+      html += `<li>${renderInline(ul[1])}</li>`;
+    } else if (ol) {
+      flushPara();
+      if (list !== "ol") { closeList(); html += "<ol>"; list = "ol"; }
+      html += `<li>${renderInline(ol[1])}</li>`;
+    } else { closeList(); para.push(t); }
+  }
+  if (inCode) html += `<pre><code>${code.join("\n")}</code></pre>`;
+  flushPara();
+  closeList();
+  return html;
 }
