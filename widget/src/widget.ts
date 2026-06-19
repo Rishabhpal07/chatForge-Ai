@@ -130,7 +130,7 @@ export function mount(config: WidgetConfig): ShadowRoot {
         } else if (evt.type === "done") {
           conversationId = evt.conversationId;
         } else if (evt.type === "error") {
-          bot.textContent += `\n[error: ${evt.message}]`;
+          bot.textContent += (bot.textContent ? "\n\n" : "") + (evt.message || "Sorry, something went wrong. Please try again.");
         }
       }
     } catch (err) {
