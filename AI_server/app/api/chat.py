@@ -7,6 +7,7 @@ bot+IP. The answer streams back as Server-Sent Events.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from urllib.parse import urlparse
 
@@ -17,6 +18,19 @@ from app.core.ratelimit import allow
 from app.db import chat_repo
 from app.rag import generate, prompt, retriever
 from app.schemas.contracts import ChatRequest, Citation
+
+logger = logging.getLogger(__name__)
+
+
+def _friendly_error(exc: Exception) -> str:
+    """Turn an upstream/generation error into a calm, user-safe message (never leak the
+    provider URL, stack, or status text to the end user)."""
+    status_code = getattr(getattr(exc, "response", None), "status_code", None)
+    if status_code == 429:
+        return "I'm getting a lot of requests right now — please wait a few seconds and try again."
+    if status_code in (401, 402, 403):
+        return "The assistant is temporarily unavailable. Please try again later."
+    return "Sorry, I couldn't generate a response just now. Please try again in a moment."
 
 router = APIRouter(tags=["chat"])
 
@@ -106,7 +120,8 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
                 parts.append(delta)
                 yield _sse({"type": "token", "text": delta})
         except Exception as exc:  # noqa: BLE001 — surface generation failure to client
-            yield _sse({"type": "error", "code": "generation_failed", "message": str(exc)})
+            logger.warning("generation failed for bot %s: %s", bot.id, exc)
+            yield _sse({"type": "error", "code": "generation_failed", "message": _friendly_error(exc)})
             return
 
         answer = "".join(parts)

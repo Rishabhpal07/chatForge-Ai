@@ -52,6 +52,49 @@ def load_sitemap_urls(sitemap_url: str, *, _depth: int = 0) -> list[str]:
     return [loc.text for loc in root.findall(".//sm:url/sm:loc", ns) if loc.text]
 
 
+def discover_sitemap(page_url: str) -> str | None:
+    """Find a site's sitemap from any page URL: check /robots.txt for a `Sitemap:` line,
+    then fall back to common locations. Returns the first sitemap URL that parses to a
+    non-empty list of pages, else None. Used to turn a plain homepage + "whole-site crawl"
+    into a precise, progress-tracked sitemap ingest."""
+    import httpx
+    from urllib.parse import urljoin
+
+    p = urlparse(page_url)
+    if not p.scheme or not p.netloc:
+        return None
+    root = f"{p.scheme}://{p.netloc}"
+
+    candidates: list[str] = []
+    # 1) robots.txt advertises the canonical sitemap(s).
+    try:
+        r = httpx.get(
+            urljoin(root, "/robots.txt"), follow_redirects=True, timeout=15.0,
+            headers=loaders._BROWSER_HEADERS,
+        )
+        if r.status_code == 200:
+            for line in r.text.splitlines():
+                if line.lower().startswith("sitemap:"):
+                    candidates.append(line.split(":", 1)[1].strip())
+    except Exception:  # noqa: BLE001 — robots.txt is best-effort
+        pass
+    # 2) Common conventional paths.
+    candidates += [urljoin(root, path) for path in ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml")]
+
+    seen: set[str] = set()
+    for cand in candidates:
+        if cand in seen:
+            continue
+        seen.add(cand)
+        try:
+            if load_sitemap_urls(cand):  # non-empty → it's a real sitemap
+                logger.info("discovered sitemap %s for %s", cand, page_url)
+                return cand
+        except Exception:  # noqa: BLE001 — try the next candidate
+            continue
+    return None
+
+
 async def crawl_urls(urls: list[str], *, concurrency: int | None = None) -> list[LoadedDoc]:
     """Fetch many URLs concurrently via the fast httpx+trafilatura path, with bounded
     parallelism + per-URL retries/backoff (rate-limit friendly). Failures are skipped."""

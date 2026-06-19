@@ -21,12 +21,28 @@ from app.rag.url_score import prioritize_urls
 from app.schemas.contracts import IngestJob, IngestResult
 
 
+# Statuses that mean "the crawl is still running and may continue".
+_ACTIVE_STATUSES = ("pending", "processing", "partially_ready")
+
+
+class _Cancelled(Exception):
+    """Raised internally when a source is stopped (status → ready) or deleted mid-crawl."""
+
+
 # ── status / progress helpers ────────────────────────────────────────────────
 async def _set_status(conn, source_id: str, status: str, error: str | None = None) -> None:
     await conn.execute(
         "UPDATE sources SET status = $2, error = $3, updated_at = now() WHERE id = $1",
         source_id, status, error,
     )
+
+
+async def _still_active(conn, source_id: str) -> bool:
+    """True only if the source still exists AND is in an active (running) state. A user
+    'stop' sets status=ready and a 'delete' removes the row — both make this False, so the
+    worker can bail between batches."""
+    row = await conn.fetchrow("SELECT status FROM sources WHERE id = $1", source_id)
+    return bool(row) and row["status"] in _ACTIVE_STATUSES
 
 
 async def _set_progress(
@@ -37,10 +53,14 @@ async def _set_progress(
     total: int | None = None,
     processed: int | None = None,
     indexed: int | None = None,
+    only_if_active: bool = False,
 ) -> None:
-    """Update status + progress counters (NULL args leave the existing value)."""
+    """Update status + progress counters (NULL args leave the existing value). When
+    `only_if_active` is set, the update is a no-op unless the source is still running —
+    so a per-batch progress write can never resurrect a source the user just stopped/deleted."""
+    guard = "AND status IN ('pending','processing','partially_ready')" if only_if_active else ""
     await conn.execute(
-        """
+        f"""
         UPDATE sources SET
           status          = COALESCE($2, status),
           total_pages     = COALESCE($3, total_pages),
@@ -48,7 +68,7 @@ async def _set_progress(
           indexed_pages   = COALESCE($5, indexed_pages),
           error           = NULL,
           updated_at      = now()
-        WHERE id = $1
+        WHERE id = $1 {guard}
         """,
         source_id, status, total, processed, indexed,
     )
@@ -104,6 +124,12 @@ async def run_ingestion(job: IngestJob) -> IngestResult:
     try:
         if job.type == "sitemap":
             return await _run_sitemap(job, period)
+        # Whole-site crawl: try to discover the site's sitemap first → precise page count
+        # + progressive indexing. Fall back to link-following deep crawl if there's none.
+        if job.type == "url" and job.deep_crawl:
+            sitemap = await asyncio.to_thread(crawler.discover_sitemap, job.uri)
+            if sitemap:
+                return await _run_sitemap(job, period, sitemap_url=sitemap)
         return await _run_single(job, period)
     except asyncio.CancelledError:
         async with tenant_tx(job.tenant_id) as conn:
@@ -127,6 +153,9 @@ async def _run_single(job: IngestJob, period: str) -> IngestResult:
         return IngestResult(source_id=job.source_id, status="error", error=str(exc))
 
     async with tenant_tx(job.tenant_id) as conn:
+        # Skip indexing if the source was stopped/deleted while fetching.
+        if not await _still_active(conn, job.source_id):
+            return IngestResult(source_id=job.source_id, status="ready", documents=0, chunks=0)
         doc_count, chunk_count = await _index_docs(conn, job, docs)
         await _record_usage(conn, job, chunk_count, period)
         await _set_progress(
@@ -136,12 +165,14 @@ async def _run_single(job: IngestJob, period: str) -> IngestResult:
     return IngestResult(source_id=job.source_id, status="ready", documents=doc_count, chunks=chunk_count)
 
 
-async def _run_sitemap(job: IngestJob, period: str) -> IngestResult:
-    """Progressive sitemap ingestion: prioritize → first batch (partially_ready) → rest."""
+async def _run_sitemap(job: IngestJob, period: str, *, sitemap_url: str | None = None) -> IngestResult:
+    """Progressive sitemap ingestion: prioritize → first batch (partially_ready) → rest.
+    `sitemap_url` overrides job.uri when the sitemap was auto-discovered from a page URL."""
     settings = get_settings()
+    sm_url = sitemap_url or job.uri
 
     try:
-        urls = prioritize_urls(crawler.load_sitemap_urls(job.uri))
+        urls = prioritize_urls(crawler.load_sitemap_urls(sm_url))
     except Exception as exc:  # noqa: BLE001
         async with tenant_tx(job.tenant_id) as conn:
             await _set_status(conn, job.source_id, "error", f"sitemap parse failed: {exc}")
@@ -172,6 +203,10 @@ async def _run_sitemap(job: IngestJob, period: str) -> IngestResult:
         nonlocal processed, indexed, total_chunks
         docs = await crawler.crawl_urls(urls[lo:hi], concurrency=conc)
         async with tenant_tx(job.tenant_id) as conn:
+            # Bail before writing/indexing if the user stopped or deleted the source while
+            # this batch was fetching (avoids inserting into a deleted source → FK error).
+            if not await _still_active(conn, job.source_id):
+                raise _Cancelled()
             dc, cc = await _index_docs(conn, job, docs)
             indexed += dc
             total_chunks += cc
@@ -179,20 +214,32 @@ async def _run_sitemap(job: IngestJob, period: str) -> IngestResult:
             # Stay partially_ready until the very end → bot usable, indexing visible.
             await _set_progress(
                 conn, job.source_id, status="partially_ready",
-                processed=processed, indexed=indexed,
+                processed=processed, indexed=indexed, only_if_active=True,
             )
 
-    # 1) First batch → bot becomes usable immediately.
-    await _process(0, first)
-    # 2) Remaining pages in background batches.
-    lo = first
-    while lo < total:
-        hi = min(lo + conc, total)
-        await _process(lo, hi)
-        lo = hi
+    try:
+        # 1) First batch → bot becomes usable immediately.
+        await _process(0, first)
+        # 2) Remaining pages in background batches.
+        lo = first
+        while lo < total:
+            hi = min(lo + conc, total)
+            await _process(lo, hi)
+            lo = hi
+    except _Cancelled:
+        # User stopped (status→ready) or deleted the source. Keep whatever indexed so far;
+        # if the row still exists, finalize it as ready with the partial counts.
+        async with tenant_tx(job.tenant_id) as conn:
+            await conn.execute(
+                "UPDATE sources SET status = 'ready', processed_pages = $2, indexed_pages = $3, "
+                "updated_at = now() WHERE id = $1 AND status <> 'error'",
+                job.source_id, processed, indexed,
+            )
+            await _record_usage(conn, job, total_chunks, period)
+        return IngestResult(source_id=job.source_id, status="ready", documents=indexed, chunks=total_chunks)
 
     # 3) Finalize.
     async with tenant_tx(job.tenant_id) as conn:
         await _record_usage(conn, job, total_chunks, period)
-        await _set_progress(conn, job.source_id, status="ready", processed=total, indexed=indexed)
+        await _set_progress(conn, job.source_id, status="ready", processed=total, indexed=indexed, only_if_active=True)
     return IngestResult(source_id=job.source_id, status="ready", documents=indexed, chunks=total_chunks)
