@@ -14,16 +14,16 @@ export type PlanLimits = z.infer<typeof planLimitsSchema>;
 
 export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
   free: {
-    maxBots: 3,
-    maxSources: 25,
-    maxMonthlyMessages: 1_000,
-    maxStorageBytes: 100 * 1024 * 1024, // 100 MB
+    maxBots: 1,
+    maxSources: 3,
+    maxMonthlyMessages: 20,
+    maxStorageBytes: 10 * 1024 * 1024, // 100 MB
   },
   pro: {
     maxBots: 5,
-    maxSources: 200,
-    maxMonthlyMessages: 10_000,
-    maxStorageBytes: 1024 * 1024 * 1024, // 1 GB
+    maxSources: 50,
+    maxMonthlyMessages: 1000,
+    maxStorageBytes: 102 * 1024 * 1024, // 1 GB
   },
   scale: {
     maxBots: 50,
@@ -38,7 +38,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
  * landing page and the in-app billing screen so they can never disagree.
  * Prices are INR and match the Razorpay charge (paise = inr * 100).
  */
-export const PLAN_PRICE_INR: Record<Plan, number> = { free: 0, pro: 999, scale: 4999 };
+export const PLAN_PRICE_INR: Record<Plan, number> = { free: 0, pro: 299, scale: 4999 };
 
 const fmt = (n: number) => n.toLocaleString("en-IN");
 
