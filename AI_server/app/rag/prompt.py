@@ -11,7 +11,10 @@ _GROUNDING = (
     "Be concise and direct. Answer in 1–3 short sentences (or a few bullets only if the "
     "user explicitly asks for a list). Give only what directly answers the question — no "
     "preamble, no restating the question, no background or filler, no repetition. If a "
-    "short answer fully covers it, stop there."
+    "short answer fully covers it, stop there.\n\n"
+    "Write in clean, natural prose. Use markdown sparingly: bold only a genuinely key term, "
+    "a simple dash list only when listing 3+ items, and avoid headings, nested bullets, and "
+    "decorative asterisks. Plain sentences are preferred over heavily formatted text."
 )
 
 
