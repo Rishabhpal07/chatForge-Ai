@@ -1,12 +1,16 @@
 """OpenRouter chat client. All generation flows through here (streaming SSE)."""
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator
 
 import httpx
 
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class OpenRouterClient:
@@ -43,26 +47,45 @@ class OpenRouterClient:
             "temperature": temperature,
             "stream": True,
         }
-        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
-            async with client.stream(
-                "POST",
-                f"{self._base_url}/chat/completions",
-                headers=self._headers(),
-                json=payload,
-            ) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line or not line.startswith("data: "):
-                        continue
-                    data = line[len("data: ") :]
-                    if data == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    delta = (
-                        chunk.get("choices", [{}])[0].get("delta", {}).get("content")
-                    )
-                    if delta:
-                        yield delta
+        # Free models flake intermittently (HTTP 5xx / "Internal Server Error" chunks). Retry
+        # a few times — but ONLY while we haven't streamed any text yet, so the user never
+        # sees a partial answer twice. Once tokens have flowed, any error propagates.
+        attempts = 3
+        for attempt in range(attempts):
+            produced = False
+            try:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+                    async with client.stream(
+                        "POST",
+                        f"{self._base_url}/chat/completions",
+                        headers=self._headers(),
+                        json=payload,
+                    ) as resp:
+                        resp.raise_for_status()
+                        async for line in resp.aiter_lines():
+                            if not line or not line.startswith("data: "):
+                                continue
+                            data = line[len("data: ") :]
+                            if data == "[DONE]":
+                                return
+                            try:
+                                chunk = json.loads(data)
+                            except json.JSONDecodeError:
+                                continue
+                            # Error object, or keepalive/usage chunks with an EMPTY choices
+                            # list — guard against both (else choices[0] → IndexError).
+                            if chunk.get("error"):
+                                raise RuntimeError(str(chunk["error"].get("message") or chunk["error"]))
+                            choices = chunk.get("choices") or []
+                            if not choices:
+                                continue
+                            delta = choices[0].get("delta", {}).get("content")
+                            if delta:
+                                produced = True
+                                yield delta
+                return  # stream finished cleanly
+            except Exception as exc:  # noqa: BLE001 — retry transient upstream failures
+                if produced or attempt == attempts - 1:
+                    raise
+                logger.warning("OpenRouter stream failed (attempt %d/%d): %s — retrying", attempt + 1, attempts, exc)
+                await asyncio.sleep(0.8 * (attempt + 1))
