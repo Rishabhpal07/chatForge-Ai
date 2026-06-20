@@ -39,7 +39,7 @@ export default function AnalyticsPage() {
   const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="mt-6 md:mt-0 flex flex-col gap-8">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-ink">Analytics</h1>
         <p className="mt-1 text-sm text-ink-muted">

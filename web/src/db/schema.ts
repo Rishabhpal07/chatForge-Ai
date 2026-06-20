@@ -60,7 +60,7 @@ export const bots = pgTable(
     name: text("name").notNull(),
     publicKey: text("public_key").notNull(),
     systemPrompt: text("system_prompt").notNull().default(""),
-    model: text("model").notNull().default("openai/gpt-oss-20b:free"),
+    model: text("model").notNull().default("openrouter/owl-alpha"),
     temperature: doublePrecision("temperature").notNull().default(0.2),
     theme: jsonb("theme").notNull().default({}),
     allowedDomains: text("allowed_domains").array().notNull().default(sql`'{}'`),

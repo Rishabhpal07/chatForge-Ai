@@ -286,3 +286,23 @@ body {
     "opsz" 24;
   user-select: none;
 }
+
+/* ── Touch devices: tap feedback ──────────────────────────────────────────────
+   On touch screens :hover never fires, so hover-only styling feels unresponsive. Give
+   every interactive element a quick press response on tap and kill the gray tap-flash.
+   Elements with their own active: utility (e.g. active:scale-95) win via specificity. */
+@media (hover: none) {
+  a,
+  button,
+  [role="button"],
+  label,
+  summary {
+    -webkit-tap-highlight-color: transparent;
+  }
+  a:active,
+  button:active,
+  [role="button"]:active {
+    transform: scale(0.97);
+    transition: transform 0.08s ease;
+  }
+}

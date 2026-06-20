@@ -133,16 +133,16 @@ export default function LandingPage() {
             <div className="glass-card relative mx-auto max-w-5xl rounded-2xl p-sm shadow-2xl">
               <div className="absolute -left-12 -top-12 h-64 w-64 rounded-full bg-primary/20 blur-[100px]" />
               <div className="absolute -bottom-12 -right-12 h-64 w-64 rounded-full bg-secondary/20 blur-[100px]" />
-              <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-surface-container-lowest">
-                <div className="glass-card flex h-[60%] w-[80%] items-center justify-center rounded-2xl border-primary/20">
-                  <div className="w-full p-xl text-left">
-                    <div className="mb-lg flex items-center gap-md">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 text-primary">
+              <div className="relative flex min-h-[280px] items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-surface-container-lowest sm:aspect-video sm:min-h-0">
+                <div className="glass-card flex w-[90%] items-center justify-center rounded-2xl border-primary/20 sm:h-[60%] sm:w-[80%]">
+                  <div className="w-full p-md text-left sm:p-xl">
+                    <div className="mb-md flex items-center gap-md sm:mb-lg">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary sm:h-10 sm:w-10">
                         <Icon name="neurology" />
                       </div>
-                      <div>
-                        <h4 className="font-headline-md">Knowledge Base Syncing…</h4>
-                        <p className="font-body-sm text-on-surface-variant">
+                      <div className="min-w-0">
+                        <h4 className="text-base font-semibold sm:font-headline-md">Knowledge Base Syncing…</h4>
+                        <p className="truncate font-body-sm text-on-surface-variant">
                           Crawling: help.chatforge.ai
                         </p>
                       </div>
@@ -243,9 +243,11 @@ export default function LandingPage() {
           <div className="mb-24 grid grid-cols-2 gap-xl md:grid-cols-4 lg:grid-cols-5">
             <div className="col-span-2 lg:col-span-2">
               <div className="mb-lg flex items-center gap-xs">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-container">
-                  <Icon name="smart_toy" filled className="text-white" />
-                </div>
+                <img
+                  src="/logo.png"
+                  alt="ChatForge AI Logo"
+                  className="h-8 w-8 rounded-sm"
+                />
                 <span className="font-display text-headline-md font-bold">ChatForge AI</span>
               </div>
               <p className="mb-xl max-w-4xs font-body-sm text-on-surface-variant">

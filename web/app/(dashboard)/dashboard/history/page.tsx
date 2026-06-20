@@ -41,7 +41,7 @@ export default function HistoryPage() {
   }, [selected]);
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="mt-5 md:mt-0 flex flex-col gap-8">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-ink">Chat History</h1>
         <p className="mt-1 text-sm text-ink-muted">
@@ -62,9 +62,8 @@ export default function HistoryPage() {
                 <li key={c.id}>
                   <button
                     onClick={() => setSelected(c.id)}
-                    className={`flex w-full flex-col items-start gap-1 rounded-lg px-3 py-3 text-left transition-colors ${
-                      selected === c.id ? "bg-brand-soft" : "hover:bg-surface-hover"
-                    }`}
+                    className={`flex w-full flex-col items-start gap-1 rounded-lg px-3 py-3 text-left transition-colors ${selected === c.id ? "bg-brand-soft" : "hover:bg-surface-hover"
+                      }`}
                   >
                     <span className="flex w-full items-center justify-between">
                       <span className="font-medium text-ink">{c.botName}</span>
@@ -97,11 +96,10 @@ export default function HistoryPage() {
               {messages.map((m) => (
                 <div
                   key={m.id}
-                  className={`max-w-[85%] rounded-xl px-4 py-2 text-sm ${
-                    m.role === "user"
-                      ? "self-end bg-brand text-white"
-                      : "self-start border border-line bg-surface-muted text-ink"
-                  }`}
+                  className={`max-w-[85%] rounded-xl px-4 py-2 text-sm ${m.role === "user"
+                    ? "self-end bg-brand text-white"
+                    : "self-start border border-line bg-surface-muted text-ink"
+                    }`}
                 >
                   <span className="whitespace-pre-wrap">{m.content}</span>
                 </div>

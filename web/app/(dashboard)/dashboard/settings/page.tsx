@@ -99,18 +99,18 @@ export default function SettingsPage() {
 
   const bars = data
     ? [
-        { label: "Chatbots", used: data.usage.bots, max: data.limits.maxBots },
-        { label: "Sources", used: data.usage.sources, max: data.limits.maxSources },
-        {
-          label: "Messages (this month)",
-          used: data.usage.monthlyMessages,
-          max: data.limits.maxMonthlyMessages,
-        },
-      ]
+      { label: "Chatbots", used: data.usage.bots, max: data.limits.maxBots },
+      { label: "Sources", used: data.usage.sources, max: data.limits.maxSources },
+      {
+        label: "Messages (this month)",
+        used: data.usage.monthlyMessages,
+        max: data.limits.maxMonthlyMessages,
+      },
+    ]
     : [];
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="sm:mt-6 md:mt-0 flex flex-col gap-8">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-ink">Settings &amp; Billing</h1>
         <p className="mt-1 text-sm text-ink-muted">Your plan, usage, and account activity.</p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useId, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   X,
@@ -542,7 +542,7 @@ function TestStep({ publicKey }: { publicKey: string }) {
   const [input, setInput] = useState("");
   const [answer, setAnswer] = useState("");
   const [streaming, setStreaming] = useState(false);
-  const visitorId = useRef(`wizard-${useId()}`);
+  const visitorId = useRef(`wizard-${Math.random().toString(36).slice(2)}`);
 
   async function ask(e: React.FormEvent) {
     e.preventDefault();

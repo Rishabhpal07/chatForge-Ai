@@ -23,6 +23,7 @@ import { Markdown } from "@/src/components/Markdown";
 const AI_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL ?? "http://localhost:8000";
 
 const MODELS = [
+  { id: "openrouter/owl-alpha", label: "OWL Alpha (free, 1M context · preview)" },
   { id: "openai/gpt-oss-20b:free", label: "GPT-OSS 20B (free)" },
   { id: "meta-llama/llama-3.3-70b-instruct:free", label: "Llama 3.3 70B (free)" },
   { id: "anthropic/claude-haiku-4.5", label: "Claude Haiku 4.5 (paid)" },
@@ -362,8 +363,8 @@ function KnowledgeSection({
       {sources.length === 0 ? (
         <p className="text-sm text-ink-muted">No sources yet.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-line">
-          <table className="w-full min-w-[34rem] text-sm">
+        <div className="overflow-hidden rounded-lg border border-line">
+          <table className="w-full text-sm">
             <thead>
               <tr className="bg-surface-muted text-left">
                 <th className="label-mono px-4 py-2 text-[11px] text-ink-muted">Filename</th>

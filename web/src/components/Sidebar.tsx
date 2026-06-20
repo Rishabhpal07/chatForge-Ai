@@ -31,12 +31,12 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile top bar (hamburger) — visible below md only */}
+      {/* Mobile top bar with hamburger — visible below md only */}
       <div className="fixed inset-x-0 top-0 z-40 flex items-center gap-3 border-b border-outline-variant bg-surface-container-low px-4 py-3 md:hidden">
         <button
           onClick={() => setOpen(true)}
           aria-label="Open menu"
-          className="rounded-lg p-1 mt-2 text-on-surface transition-colors hover:bg-surface-container-high"
+          className="rounded-lg p-1.5 text-on-surface transition-colors hover:bg-surface-container-high active:scale-95"
         >
           <Icon name="menu" />
         </button>
@@ -46,7 +46,7 @@ export function Sidebar() {
         </Link>
       </div>
 
-      {/* Backdrop (mobile, when drawer open) */}
+      {/* Backdrop when the drawer is open (mobile) */}
       {open && (
         <div
           className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
@@ -55,10 +55,11 @@ export function Sidebar() {
         />
       )}
 
-      {/* Sidebar — fixed drawer on mobile, always-visible on md+ */}
+      {/* Sidebar — slide-in drawer on mobile, always visible on md+ */}
       <aside
-        className={`fixed left-0 top-0 z-50 flex h-full w-64 flex-col border-r border-outline-variant bg-surface-container-low transition-transform duration-300 md:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"
-          }`}
+        className={`fixed left-0 top-0 z-50 flex h-full w-64 flex-col border-r border-outline-variant bg-surface-container-low transition-transform duration-300 md:translate-x-0 ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
       >
         {/* Brand */}
         <div className="flex items-center justify-between p-lg">
@@ -69,7 +70,7 @@ export function Sidebar() {
           <button
             onClick={() => setOpen(false)}
             aria-label="Close menu"
-            className="rounded-lg p-1 text-on-surface-variant transition-colors hover:bg-surface-container-high md:hidden"
+            className="rounded-lg p-1.5 text-on-surface-variant transition-colors hover:bg-surface-container-high active:scale-95 md:hidden"
           >
             <Icon name="close" />
           </button>
@@ -83,10 +84,11 @@ export function Sidebar() {
               <Link
                 key={href}
                 href={href}
-                className={`flex items-center gap-3 rounded-lg px-4 py-3 text-body-md transition-colors duration-200 ${active
-                  ? "active-nav-glow bg-primary-container text-on-primary-container"
-                  : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-                  }`}
+                className={`flex items-center gap-3 rounded-lg px-4 py-3 text-body-md transition-colors duration-200 ${
+                  active
+                    ? "active-nav-glow bg-primary-container text-on-primary-container"
+                    : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                }`}
               >
                 <Icon name={icon} />
                 {label}

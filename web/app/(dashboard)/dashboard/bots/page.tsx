@@ -24,7 +24,7 @@ export default function MyChatbotsPage() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex md:mt-0 mt-6 flex-col gap-8">
       <SectionTitle
         title="My Chatbots"
         subtitle="Manage and monitor your active AI assistants."

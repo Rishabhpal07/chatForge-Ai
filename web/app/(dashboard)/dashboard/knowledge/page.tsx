@@ -58,7 +58,7 @@ export default function KnowledgePage() {
   );
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="mt-6 md:mt-0 flex flex-col gap-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-ink">Knowledge Base</h1>
