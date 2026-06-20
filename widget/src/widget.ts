@@ -176,7 +176,6 @@ function renderInline(s: string): string {
   s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   s = s.replace(/__([^_]+)__/g, "<strong>$1</strong>");
   s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
-  // links [text](http/https/mailto only — never javascript:)
   s = s.replace(
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
@@ -184,9 +183,9 @@ function renderInline(s: string): string {
   return s;
 }
 
-/** Minimal, XSS-safe markdown → HTML: escapes everything first, then builds only our
- * own whitelisted tags. Handles paragraphs, bold/italic/code/links, bullet & numbered
- * lists, headings (as bold), and fenced code blocks. */
+/** Minimal, XSS-safe markdown → HTML: escapes everything first, then builds only our own
+ * whitelisted tags. Handles paragraphs, bold/italic/code/links, bullet & numbered lists,
+ * headings (as bold), and fenced code blocks. */
 function renderMarkdown(src: string): string {
   const lines = escapeHtml(src).split("\n");
   let html = "";
@@ -205,10 +204,8 @@ function renderMarkdown(src: string): string {
       continue;
     }
     if (inCode) { code.push(line); continue; }
-
     const t = line.trim();
     if (!t) { flushPara(); closeList(); continue; }
-
     const h = t.match(/^#{1,6}\s+(.*)/);
     const ul = t.match(/^[-*]\s+(.*)/);
     const ol = t.match(/^\d+\.\s+(.*)/);
