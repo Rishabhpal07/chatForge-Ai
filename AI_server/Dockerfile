@@ -19,10 +19,6 @@ COPY app ./app
 COPY start.sh ./start.sh
 RUN chmod +x ./start.sh && pip install --upgrade pip && pip install .
 
-# crawl4ai needs a headless Chromium (+ its OS libs) for JS-rendered crawling.
-# `--with-deps` pulls the required system packages; the browser is baked into the image.
-RUN playwright install --with-deps chromium
-
 # Pre-download the local embeddings model so the first ingest doesn't pay the fetch.
 RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='BAAI/bge-small-en-v1.5')"
 
