@@ -89,6 +89,11 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
         visitor_id=req.visitor_id,
         conversation_id=req.conversation_id,
     )
+    # Load prior turns BEFORE inserting the current message, so follow-ups like
+    # "explain in more detail" have the earlier Q&A as context.
+    history = await chat_repo.get_recent_messages(
+        tenant_id=bot.tenant_id, conversation_id=conversation_id, limit=8
+    )
     await chat_repo.insert_message(
         tenant_id=bot.tenant_id,
         conversation_id=conversation_id,
@@ -107,7 +112,7 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
         for c in chunks
     ]
     messages = prompt.build_messages(
-        bot_system_prompt=bot.system_prompt, chunks=chunks, history=[], question=req.message
+        bot_system_prompt=bot.system_prompt, chunks=chunks, history=history, question=req.message
     )
 
     async def event_stream() -> AsyncIterator[str]:

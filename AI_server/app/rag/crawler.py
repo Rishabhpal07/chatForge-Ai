@@ -27,15 +27,27 @@ logger = logging.getLogger(__name__)
 
 # ── Sitemap parsing (engine-independent) ─────────────────────────────────────
 def load_sitemap_urls(sitemap_url: str, *, _depth: int = 0) -> list[str]:
-    """Fetch a sitemap and return page URLs. Handles both a flat <urlset> and a nested
-    <sitemapindex> (recursing into child sitemaps, as large sites use)."""
+    """Fetch a sitemap and return page URLs. Handles a flat <urlset>, a nested
+    <sitemapindex> (recursing into child sitemaps), and plain-text `.txt` sitemaps
+    (one URL per line) — all valid per the sitemaps.org protocol."""
     import httpx
 
     resp = httpx.get(
         sitemap_url, follow_redirects=True, timeout=30.0, headers=loaders._BROWSER_HEADERS
     )
     resp.raise_for_status()
-    root = ElementTree.fromstring(resp.text)
+    text = resp.text
+
+    # Plain-text sitemap (.txt): one URL per line. Big sites (e.g. Razorpay docs) point
+    # their <sitemapindex> at a .txt list rather than XML, so this also handles children.
+    if not text.lstrip().startswith("<"):
+        return [
+            ln.strip()
+            for ln in text.splitlines()
+            if ln.strip().startswith(("http://", "https://"))
+        ]
+
+    root = ElementTree.fromstring(text)
     ns = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
 
     # Sitemap index → recurse into child sitemaps (bounded depth + count).
@@ -211,20 +223,66 @@ async def crawl_single(url: str) -> list[LoadedDoc]:
         return loaders.load_url(url)
 
 
+async def _crawl_deep_httpx(start_url: str, max_pages: int, max_depth: int) -> list[LoadedDoc]:
+    """Browser-free whole-site crawl: BFS over same-host links using httpx, extracting
+    readable text with trafilatura. Used when no sitemap was found and the browser engine
+    is unavailable — so 'crawl the whole site' still covers more than the landing page."""
+    import re
+    import httpx
+    import trafilatura
+    from urllib.parse import urldefrag, urljoin
+
+    base_host = urlparse(start_url).netloc
+    start = urldefrag(start_url)[0]
+    seen: set[str] = {start}
+    queue: list[tuple[str, int]] = [(start, 0)]
+    docs: list[LoadedDoc] = []
+    href_re = re.compile(r'href=["\']([^"\'#?]+)', re.IGNORECASE)
+
+    async with httpx.AsyncClient(
+        follow_redirects=True, timeout=20.0, headers=loaders._BROWSER_HEADERS
+    ) as client:
+        while queue and len(docs) < max_pages:
+            url, depth = queue.pop(0)
+            try:
+                resp = await client.get(url)
+            except Exception:  # noqa: BLE001 — skip an unreachable page
+                continue
+            if resp.status_code != 200 or "html" not in resp.headers.get("content-type", ""):
+                continue
+            html = resp.text
+            text = trafilatura.extract(html) or ""
+            if text.strip():
+                meta = trafilatura.extract_metadata(html)
+                title = (getattr(meta, "title", None) if meta else None) or url
+                docs.append(LoadedDoc(title=title, text=text, metadata={"url": url}))
+            if depth < max_depth:
+                for raw in href_re.findall(html):
+                    link = urldefrag(urljoin(url, raw))[0]
+                    if (
+                        link.startswith("http")
+                        and urlparse(link).netloc == base_host
+                        and link not in seen
+                    ):
+                        seen.add(link)
+                        queue.append((link, depth + 1))
+    return docs or loaders.load_url(start_url)
+
+
 async def crawl_deep(
     start_url: str, *, max_pages: int | None = None, max_depth: int | None = None
 ) -> list[LoadedDoc]:
     """BFS-crawl internal links from start_url, capped by depth and page count.
 
-    Only follows links on the same host as start_url. One browser session is reused for
-    the whole crawl. Falls back to a single-page fetch if the browser engine is missing.
+    Only follows links on the same host as start_url. Uses a browser when available for
+    JS-rendered sites; otherwise a fast httpx link-follower covers the whole site.
     """
     settings = get_settings()
     max_pages = min(max_pages or settings.crawl_max_pages, settings.crawl_max_pages)
     max_depth = settings.crawl_max_depth if max_depth is None else max_depth
 
     if not _browser_available():
-        return loaders.load_url(start_url)
+        return await _crawl_deep_httpx(start_url, max_pages, max_depth)
 
     base_host = urlparse(start_url).netloc
     visited: set[str] = set()

@@ -86,6 +86,23 @@ async def insert_message(
         return str(row["id"])
 
 
+async def get_recent_messages(
+    *, tenant_id: str, conversation_id: str, limit: int = 8
+) -> list[dict[str, str]]:
+    """Return the last `limit` user/assistant turns (oldest→newest) so the model has
+    conversation context for follow-ups like 'explain in more detail'."""
+    async with tenant_tx(tenant_id) as conn:
+        rows = await conn.fetch(
+            """SELECT role, content FROM messages
+               WHERE conversation_id = $1 AND role IN ('user','assistant') AND content <> ''
+               ORDER BY created_at DESC
+               LIMIT $2""",
+            conversation_id,
+            limit,
+        )
+    return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+
+
 FREE_MONTHLY_MESSAGES = 200  # fallback when no subscription row exists
 
 
