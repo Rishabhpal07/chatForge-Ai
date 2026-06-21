@@ -292,7 +292,8 @@ function AddDataStep({
   onChange: () => void;
 }) {
   const [url, setUrl] = useState("");
-  const [crawlMode, setCrawlMode] = useState<"quick" | "standard" | "full">("standard");
+  const [mode, setMode] = useState<"site" | "page">("site");
+  const [crawlMode, setCrawlMode] = useState<"quick" | "standard" | "full">("quick");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -348,7 +349,7 @@ function AddDataStep({
           botId,
           type: isSitemap ? "sitemap" : "url",
           uri: url.trim(),
-          deepCrawl: isSitemap ? undefined : false,
+          deepCrawl: isSitemap ? undefined : mode === "site",
           crawlMode,
         }),
       });
@@ -405,22 +406,52 @@ function AddDataStep({
             />
           </div>
           <Button type="submit" variant="ghost" disabled={busy}>
-            Add URL
+            Add
           </Button>
         </div>
-        <label className="flex items-center gap-2 text-[11px] text-on-surface-variant">
-          <span className="shrink-0">Crawl scope:</span>
-          <select
-            value={crawlMode}
-            onChange={(e) => setCrawlMode(e.target.value as "quick" | "standard" | "full")}
-            className="rounded-lg border border-outline-variant bg-surface-container-high px-2 py-1 text-[11px] text-on-surface outline-none focus:border-primary"
+
+        {/* Entire website vs single page */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setMode("site")}
+            className={`rounded-xl border p-2.5 text-left transition-colors ${
+              mode === "site"
+                ? "border-primary bg-primary/10"
+                : "border-outline-variant hover:bg-surface-container-high"
+            }`}
           >
-            <option value="quick">Quick (~50 pages)</option>
-            <option value="standard">Standard (~500 pages)</option>
-            <option value="full">Full (all pages)</option>
-          </select>
-          <span className="text-on-surface-variant/60">for sitemap / whole-site crawls</span>
-        </label>
+            <div className="text-body-sm font-medium text-on-surface">Entire website ✨</div>
+            <div className="text-[11px] text-on-surface-variant">Finds the sitemap & indexes all pages</div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("page")}
+            className={`rounded-xl border p-2.5 text-left transition-colors ${
+              mode === "page"
+                ? "border-primary bg-primary/10"
+                : "border-outline-variant hover:bg-surface-container-high"
+            }`}
+          >
+            <div className="text-body-sm font-medium text-on-surface">Just this page</div>
+            <div className="text-[11px] text-on-surface-variant">Indexes only the URL above</div>
+          </button>
+        </div>
+
+        {mode === "site" && (
+          <label className="flex items-center gap-2 text-[11px] text-on-surface-variant">
+            <span className="shrink-0">How many pages:</span>
+            <select
+              value={crawlMode}
+              onChange={(e) => setCrawlMode(e.target.value as "quick" | "standard" | "full")}
+              className="rounded-lg border border-outline-variant bg-surface-container-high px-2 py-1 text-[11px] text-on-surface outline-none focus:border-primary"
+            >
+              <option value="quick">Quick (~50 pages — fastest)</option>
+              <option value="standard">Standard (~500 pages)</option>
+              <option value="full">Full (all pages)</option>
+            </select>
+          </label>
+        )}
       </form>
 
       {error && <p className="text-body-sm text-error">{error}</p>}

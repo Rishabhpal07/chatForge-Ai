@@ -169,8 +169,8 @@ function KnowledgeSection({
   onChange: () => void;
 }) {
   const [url, setUrl] = useState("");
-  const [deepCrawl, setDeepCrawl] = useState(false);
-  const [crawlMode, setCrawlMode] = useState<"quick" | "standard" | "full">("standard");
+  const [deepCrawl, setDeepCrawl] = useState(true);
+  const [crawlMode, setCrawlMode] = useState<"quick" | "standard" | "full">("quick");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actingId, setActingId] = useState<string | null>(null);
@@ -329,32 +329,46 @@ function KnowledgeSection({
               />
             </div>
             <Button type="submit" variant="ghost" disabled={busy}>
-              Crawl URL
+              Add
             </Button>
           </div>
-          <label className="flex items-center gap-2 text-xs text-ink-muted">
-            <input
-              type="checkbox"
-              checked={deepCrawl}
-              onChange={(e) => setDeepCrawl(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-line accent-brand"
-            />
-            Crawl the whole site — automatically finds the site&rsquo;s sitemap for an exact
-            page count, or follows internal links if there isn&rsquo;t one.
-          </label>
-          <label className="flex items-center gap-2 text-xs text-ink-muted">
-            <span className="shrink-0">Crawl scope:</span>
-            <select
-              value={crawlMode}
-              onChange={(e) => setCrawlMode(e.target.value as "quick" | "standard" | "full")}
-              className="rounded-lg border border-line bg-surface-card px-2 py-1 text-xs text-ink outline-none focus:border-brand"
+          {/* Entire website vs single page */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setDeepCrawl(true)}
+              className={`rounded-xl border p-2.5 text-left transition-colors ${
+                deepCrawl ? "border-brand bg-brand/10" : "border-line hover:bg-surface-hover"
+              }`}
             >
-              <option value="quick">Quick (~50 pages — fastest)</option>
-              <option value="standard">Standard (~500 pages)</option>
-              <option value="full">Full (all pages)</option>
-            </select>
-            <span className="text-ink-muted/70">Applies to sitemap / whole-site crawls.</span>
-          </label>
+              <div className="text-sm font-medium text-ink">Entire website ✨</div>
+              <div className="text-[11px] text-ink-muted">Finds the sitemap &amp; indexes all pages</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDeepCrawl(false)}
+              className={`rounded-xl border p-2.5 text-left transition-colors ${
+                !deepCrawl ? "border-brand bg-brand/10" : "border-line hover:bg-surface-hover"
+              }`}
+            >
+              <div className="text-sm font-medium text-ink">Just this page</div>
+              <div className="text-[11px] text-ink-muted">Indexes only the URL above</div>
+            </button>
+          </div>
+          {deepCrawl && (
+            <label className="flex items-center gap-2 text-xs text-ink-muted">
+              <span className="shrink-0">How many pages:</span>
+              <select
+                value={crawlMode}
+                onChange={(e) => setCrawlMode(e.target.value as "quick" | "standard" | "full")}
+                className="rounded-lg border border-line bg-surface-card px-2 py-1 text-xs text-ink outline-none focus:border-brand"
+              >
+                <option value="quick">Quick (~50 pages — fastest)</option>
+                <option value="standard">Standard (~500 pages)</option>
+                <option value="full">Full (all pages)</option>
+              </select>
+            </label>
+          )}
         </form>
         {error && <p className="text-sm text-rose-600">{error}</p>}
       </div>
