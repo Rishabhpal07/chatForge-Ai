@@ -22,23 +22,30 @@ class EmbeddingsProvider(ABC):
 
 
 class OpenAIEmbeddings(EmbeddingsProvider):
+    _client: httpx.AsyncClient | None = None  # shared keep-alive client (skips TLS per call)
+
     def __init__(self) -> None:
         s = get_settings()
         self._api_key = s.openai_api_key
         self._model = s.embeddings_model
         self.dim = s.embeddings_dim
 
+    @classmethod
+    def _get_client(cls) -> httpx.AsyncClient:
+        if cls._client is None or cls._client.is_closed:
+            cls._client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0))
+        return cls._client
+
     async def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
-            resp = await client.post(
-                "https://api.openai.com/v1/embeddings",
-                headers={"Authorization": f"Bearer {self._api_key}"},
-                json={"model": self._model, "input": texts},
-            )
-            resp.raise_for_status()
-            data = resp.json()["data"]
+        resp = await self._get_client().post(
+            "https://api.openai.com/v1/embeddings",
+            headers={"Authorization": f"Bearer {self._api_key}"},
+            json={"model": self._model, "input": texts},
+        )
+        resp.raise_for_status()
+        data = resp.json()["data"]
         # API preserves request order, but sort by index defensively.
         data.sort(key=lambda d: d["index"])
         return [d["embedding"] for d in data]

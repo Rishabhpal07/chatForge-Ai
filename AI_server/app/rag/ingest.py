@@ -83,15 +83,28 @@ async def _record_usage(conn, job: IngestJob, chunk_count: int, period: str) -> 
     )
 
 
-async def _index_docs(conn, job: IngestJob, docs: list[loaders.LoadedDoc]) -> tuple[int, int]:
-    """Chunk + batch-embed + store a list of docs. Returns (doc_count, chunk_count)."""
+async def _prepare_docs(docs: list[loaders.LoadedDoc]) -> list[tuple]:
+    """Chunk + embed docs with NO database access. All chunk texts across the docs are
+    embedded in ONE batch (a single ONNX/API call instead of one per doc), and this runs
+    BEFORE the DB transaction opens — so slow embedding never holds a pooled connection."""
     embedder = get_embeddings_provider()
+    per_doc = [(doc, chunk_text(doc.text)) for doc in docs]
+    per_doc = [(doc, chunks) for doc, chunks in per_doc if chunks]
+    all_texts = [c.content for _, chunks in per_doc for c in chunks]
+    if not all_texts:
+        return []
+    vectors = await embedder.embed(all_texts)
+    prepared, i = [], 0
+    for doc, chunks in per_doc:
+        prepared.append((doc, chunks, vectors[i : i + len(chunks)]))
+        i += len(chunks)
+    return prepared
+
+
+async def _store_docs(conn, job: IngestJob, prepared: list[tuple]) -> tuple[int, int]:
+    """Fast inserts only — embeddings were computed in _prepare_docs."""
     doc_count = chunk_count = 0
-    for doc in docs:
-        chunks = chunk_text(doc.text)
-        if not chunks:
-            continue
-        vectors = await embedder.embed([c.content for c in chunks])  # batched per doc
+    for doc, chunks, vectors in prepared:
         document_id = await insert_document(
             conn, tenant_id=job.tenant_id, source_id=job.source_id,
             title=doc.title, metadata=doc.metadata,
@@ -152,11 +165,14 @@ async def _run_single(job: IngestJob, period: str) -> IngestResult:
             await _set_status(conn, job.source_id, "error", str(exc))
         return IngestResult(source_id=job.source_id, status="error", error=str(exc))
 
+    # Chunk + embed BEFORE opening the transaction (keeps DB connections free).
+    prepared = await _prepare_docs(docs)
+
     async with tenant_tx(job.tenant_id) as conn:
         # Skip indexing if the source was stopped/deleted while fetching.
         if not await _still_active(conn, job.source_id):
             return IngestResult(source_id=job.source_id, status="ready", documents=0, chunks=0)
-        doc_count, chunk_count = await _index_docs(conn, job, docs)
+        doc_count, chunk_count = await _store_docs(conn, job, prepared)
         await _record_usage(conn, job, chunk_count, period)
         await _set_progress(
             conn, job.source_id, status="ready",
@@ -202,12 +218,15 @@ async def _run_sitemap(job: IngestJob, period: str, *, sitemap_url: str | None =
     async def _process(lo: int, hi: int) -> None:
         nonlocal processed, indexed, total_chunks
         docs = await crawler.crawl_urls(urls[lo:hi], concurrency=conc)
+        # Chunk + embed the whole batch in one go BEFORE opening the transaction —
+        # a single embed call, and the pooled connection isn't held during the slow part.
+        prepared = await _prepare_docs(docs)
         async with tenant_tx(job.tenant_id) as conn:
             # Bail before writing/indexing if the user stopped or deleted the source while
             # this batch was fetching (avoids inserting into a deleted source → FK error).
             if not await _still_active(conn, job.source_id):
                 raise _Cancelled()
-            dc, cc = await _index_docs(conn, job, docs)
+            dc, cc = await _store_docs(conn, job, prepared)
             indexed += dc
             total_chunks += cc
             processed = hi

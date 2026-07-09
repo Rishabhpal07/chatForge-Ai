@@ -6,6 +6,7 @@ bot+IP. The answer streams back as Server-Sent Events.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -80,19 +81,25 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
             detail=f"monthly message limit reached ({limit}). Upgrade your plan.",
         )
 
-    chunks = await retriever.retrieve(
-        tenant_id=bot.tenant_id, bot_id=bot.id, query=req.message
-    )
-    conversation_id = await chat_repo.ensure_conversation(
-        tenant_id=bot.tenant_id,
-        bot_id=bot.id,
-        visitor_id=req.visitor_id,
-        conversation_id=req.conversation_id,
-    )
-    # Load prior turns BEFORE inserting the current message, so follow-ups like
-    # "explain in more detail" have the earlier Q&A as context.
-    history = await chat_repo.get_recent_messages(
-        tenant_id=bot.tenant_id, conversation_id=conversation_id, limit=8
+    # Retrieval (embed + vector search) and conversation/history are independent —
+    # run them concurrently to cut time-to-first-token.
+    async def _conversation_and_history() -> tuple[str, list[dict[str, str]]]:
+        cid = await chat_repo.ensure_conversation(
+            tenant_id=bot.tenant_id,
+            bot_id=bot.id,
+            visitor_id=req.visitor_id,
+            conversation_id=req.conversation_id,
+        )
+        # Load prior turns BEFORE inserting the current message, so follow-ups like
+        # "explain in more detail" have the earlier Q&A as context.
+        hist = await chat_repo.get_recent_messages(
+            tenant_id=bot.tenant_id, conversation_id=cid, limit=8
+        )
+        return cid, hist
+
+    chunks, (conversation_id, history) = await asyncio.gather(
+        retriever.retrieve(tenant_id=bot.tenant_id, bot_id=bot.id, query=req.message),
+        _conversation_and_history(),
     )
     await chat_repo.insert_message(
         tenant_id=bot.tenant_id,

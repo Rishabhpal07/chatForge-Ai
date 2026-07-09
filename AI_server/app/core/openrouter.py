@@ -12,6 +12,20 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Shared keep-alive client: reusing connections skips the TCP+TLS handshake to
+# openrouter.ai on every chat message (~100-300ms saved per reply).
+_client: httpx.AsyncClient | None = None
+
+
+def _shared_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, connect=10.0),
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=40),
+        )
+    return _client
+
 
 class OpenRouterClient:
     def __init__(self) -> None:
@@ -54,35 +68,35 @@ class OpenRouterClient:
         for attempt in range(attempts):
             produced = False
             try:
-                async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
-                    async with client.stream(
-                        "POST",
-                        f"{self._base_url}/chat/completions",
-                        headers=self._headers(),
-                        json=payload,
-                    ) as resp:
-                        resp.raise_for_status()
-                        async for line in resp.aiter_lines():
-                            if not line or not line.startswith("data: "):
-                                continue
-                            data = line[len("data: ") :]
-                            if data == "[DONE]":
-                                return
-                            try:
-                                chunk = json.loads(data)
-                            except json.JSONDecodeError:
-                                continue
-                            # Error object, or keepalive/usage chunks with an EMPTY choices
-                            # list — guard against both (else choices[0] → IndexError).
-                            if chunk.get("error"):
-                                raise RuntimeError(str(chunk["error"].get("message") or chunk["error"]))
-                            choices = chunk.get("choices") or []
-                            if not choices:
-                                continue
-                            delta = choices[0].get("delta", {}).get("content")
-                            if delta:
-                                produced = True
-                                yield delta
+                client = _shared_client()
+                async with client.stream(
+                    "POST",
+                    f"{self._base_url}/chat/completions",
+                    headers=self._headers(),
+                    json=payload,
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line or not line.startswith("data: "):
+                            continue
+                        data = line[len("data: ") :]
+                        if data == "[DONE]":
+                            return
+                        try:
+                            chunk = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+                        # Error object, or keepalive/usage chunks with an EMPTY choices
+                        # list — guard against both (else choices[0] → IndexError).
+                        if chunk.get("error"):
+                            raise RuntimeError(str(chunk["error"].get("message") or chunk["error"]))
+                        choices = chunk.get("choices") or []
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta", {}).get("content")
+                        if delta:
+                            produced = True
+                            yield delta
                 return  # stream finished cleanly
             except Exception as exc:  # noqa: BLE001 — retry transient upstream failures
                 if produced or attempt == attempts - 1:
